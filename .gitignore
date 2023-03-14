@@ -1,0 +1,6 @@
+logs/
+outputs/
+recordings/
+transcripts/
+.env
+__pycache__/

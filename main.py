@@ -13,8 +13,10 @@ import dotenv
 dotenv.load_dotenv('.env')
 
 CHAT_MODEL = "gpt-4o"
+TTS_MODEL = "tts-1"
 MODEL_TEMPERATURE = 0.5
 AUDIO_MODEL = "whisper-1"
+VOICE_MODEL = "alloy"
 
 def ask_gpt_chat(prompt: str, messages: list[Message]):
     """Returns ChatGPT's response to the given prompt."""
@@ -66,8 +68,8 @@ def text_to_speech(text: str):
     timestamp = datetime.datetime.now().timestamp()
     speech_file_path = Path(__file__).parent / f"outputs/{timestamp}.mp3"
     response = client.audio.speech.create(
-        model="tts-1",
-        voice="alloy",
+        model=TTS_MODEL,
+        voice=VOICE_MODEL,
         input=text
     )
     response.write_to_file(speech_file_path)

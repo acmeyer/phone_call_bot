@@ -1,7 +1,8 @@
 import os
 import datetime
 from openai import OpenAI
-client = OpenAI()
+from elevenlabs.client import ElevenLabs, Voice
+from elevenlabs import stream
 import argparse
 from dataclasses import asdict
 from models import Message
@@ -12,20 +13,25 @@ logging.basicConfig(level=logging.INFO)
 import dotenv
 dotenv.load_dotenv('.env')
 
+oai_client = OpenAI()
+elevenlabs_client = ElevenLabs()
+
 CHAT_MODEL = "gpt-4o"
 TTS_MODEL = "tts-1"
 MODEL_TEMPERATURE = 0.5
 AUDIO_MODEL = "whisper-1"
-VOICE_MODEL = "alloy"
+VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 def ask_gpt_chat(prompt: str, messages: list[Message]):
     """Returns ChatGPT's response to the given prompt."""
     system_message = [{"role": "system", "content": prompt}]
     message_dicts = [asdict(message) for message in messages]
     conversation_messages = system_message + message_dicts
-    response = client.chat.completions.create(model=CHAT_MODEL,
-    messages=conversation_messages,
-    temperature=MODEL_TEMPERATURE)
+    response = oai_client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=conversation_messages,
+        temperature=MODEL_TEMPERATURE
+    )
     return response.choices[0].message.content
 
 def setup_prompt(prompt_file: str = 'prompts/vet_prompt.md') -> str:
@@ -37,7 +43,7 @@ def setup_prompt(prompt_file: str = 'prompts/vet_prompt.md') -> str:
 
 def get_transcription(file_path: str):
     audio_file= open(file_path, "rb")
-    transcription = client.audio.transcriptions.create(
+    transcription = oai_client.audio.transcriptions.create(
         model=AUDIO_MODEL, 
         file=audio_file
     )
@@ -64,16 +70,26 @@ def record():
         f.write(transcript)
     return transcript
 
-def text_to_speech(text: str):
+def oai_text_to_speech(text: str):
     timestamp = datetime.datetime.now().timestamp()
     speech_file_path = Path(__file__).parent / f"outputs/{timestamp}.mp3"
-    response = client.audio.speech.create(
+    response = oai_client.audio.speech.create(
         model=TTS_MODEL,
-        voice=VOICE_MODEL,
+        voice="nova",
         input=text
     )
     response.write_to_file(speech_file_path)
     return speech_file_path
+
+def elevenlabs_text_to_speech(text: str):
+    audio_stream = elevenlabs_client.generate(
+        text=text,
+        voice=Voice(
+            voice_id=VOICE_ID
+        ),
+        stream=True
+    )
+    stream(audio_stream)
 
 def clean_up():
     logging.info('Exiting...')
@@ -93,8 +109,10 @@ def clean_up():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-pf", "--prompt_file", help="Specify the prompt file to use.", type=str)
+    parser.add_argument("-tts", "--tts_type", help="Specify the TTS type to use.", type=str, default="openai", choices=["openai", "elevenlabs"])
     args = parser.parse_args()
     prompt_file = args.prompt_file
+    tts_type = args.tts_type or "openai"
 
     prompt = setup_prompt(prompt_file)
     conversation_messages = []
@@ -106,9 +124,12 @@ if __name__ == "__main__":
             answer = ask_gpt_chat(prompt, conversation_messages)
             logging.info(f'Caller: {answer}')
             logging.info('Playing audio...')
-            audio_file = text_to_speech(answer)
-            # Play the audio file
-            os.system(f"afplay {audio_file}")
+            if tts_type == "elevenlabs":
+                elevenlabs_text_to_speech(answer)
+            else:
+                audio_file = oai_text_to_speech(answer)
+                # Play the audio file
+                os.system(f"afplay {audio_file}")
             conversation_messages.append(Message(role="assistant", content=answer))
             if 'bye' in user_input.lower():
                 clean_up()
